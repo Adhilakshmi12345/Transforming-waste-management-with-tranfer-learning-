@@ -1,0 +1,86 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    'data/train', batch_size=32, image_size=(224,224))
+class_names = train_ds.class_names
+
+# Counting samples per class
+counts = {name: 0 for name in class_names}
+for images, labels in train_ds.unbatch():
+    counts[class_names[int(labels)]] += 1
+
+sns.barplot(x=list(counts.keys()), y=list(counts.values()))
+plt.xticks(rotation=45)
+plt.title('Train set distribution')
+plt.show()
+plt.figure(figsize=(12, 8))
+for images, labels in train_ds.take(1):
+    for i in range(len(class_names)):
+        idx = tf.where(labels==i)[0][0]
+        ax = plt.subplot(2, len(class_names)//2, i+1)
+        plt.imshow(images[idx].numpy().astype("uint8"))
+        ax.set_title(class_names[i])
+        plt.axis('off')
+plt.show()
+history = model.fit(...)  # after training with transfer learning
+
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+epochs = range(len(acc))
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+plt.plot(epochs, acc, label='Train') 
+plt.plot(epochs, val_acc, label='Val')
+plt.title('Accuracy')
+plt.legend()
+
+plt.subplot(1,2,2)
+plt.plot(epochs, loss, label='Train')
+plt.plot(epochs, val_loss, label='Val')
+plt.title('Loss')
+plt.legend()
+
+plt.show()
+import numpy as np
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+
+y_true = np.concatenate([y for x,y in val_ds], axis=0)
+y_pred = np.argmax(model.predict(val_ds), axis=1)
+
+cm = confusion_matrix(y_true, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_names, yticklabels=class_names)
+plt.ylabel('True')
+plt.xlabel('Predicted')
+plt.title('Confusion Matrix')
+plt.show()
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load & augment
+train_ds = tf.keras.utils.image_dataset_from_directory('data/train', validation_split=0.2,
+    subset='training', image_size=(224,224), batch_size=32, seed=123)
+val_ds = tf.keras.utils.image_dataset_from_directory('data/train', validation_split=0.2,
+    subset='validation', image_size=(224,224), batch_size=32, seed=123)
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds = train_ds.prefetch(AUTOTUNE)
+val_ds = val_ds.prefetch(AUTOTUNE)
+
+# Transfer learning base
+base = tf.keras.applications.EfficientNetV2S(include_top=False, weights='imagenet', input_shape=(224,224,3))
+base.trainable = False
+x = tf.keras.layers.GlobalAveragePooling2D()(base.output)
+out = tf.keras.layers.Dense(len(train_ds.class_names), activation='softmax')(x)
+model = tf.keras.Model(base.input, out)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+history = model.fit(train_ds, validation_data=val_ds, epochs=10)
+
+# Visualizations as above...
