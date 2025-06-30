@@ -1,0 +1,77 @@
+project/
+├── app.py
+├── model/efficientnet_waste.h5
+├── static/
+│   └── style.css
+└── templates/
+    ├── index.html
+    └── result.html
+from flask import Flask, request, render_template
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
+import numpy as np
+import os
+
+app = Flask(__name__)
+MODEL_PATH = 'model/efficientnet_waste.h5'
+model = tf.keras.models.load_model(MODEL_PATH)
+CLASS_NAMES = ['plastic', 'metal', 'organic', 'paper']  # adjust as per your labels
+
+def prepare_img(img_path):
+    img = image.load_img(img_path, target_size=(224,224))
+    arr = image.img_to_array(img)/255.0
+    return np.expand_dims(arr, 0)
+
+@app.route('/', methods=['GET'])
+def index():
+    return render_template('index.html')
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    if 'file' not in request.files:
+        return render_template('index.html', error="No file uploaded.")
+    file = request.files['file']
+    if file.filename == '':
+        return render_template('index.html', error="Invalid file.")
+    filepath = os.path.join('static', file.filename)
+    file.save(filepath)
+
+    img_tensor = prepare_img(filepath)
+    preds = model.predict(img_tensor)[0]
+    idx = np.argmax(preds)
+    label = CLASS_NAMES[idx]
+    confidence = round(float(preds[idx]) * 100, 2)
+
+    return render_template('result.html',
+                           label=label,
+                           confidence=confidence,
+                           img_path=filepath)
+<!doctype html>
+<html>
+<head>
+  <title>Waste Classifier</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Waste Image Classification</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form action="/predict" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept="image/*" required>
+    <button type="submit">Upload & Predict</button>
+  </form>
+</body>
+</html>
+<!doctype html>
+<html>
+<head><title>Prediction Result</title></head>
+<body>
+  <h1>Prediction</h1>
+  <img src="{{ url_for('static', filename=img_path.split('/')[-1]) }}" width="300">
+  <p><strong>{{ label }}</strong> (Confidence: {{ confidence }}%)</p>
+  <a href="/">↩️ Classify another image</a>
+</body>
+</html>
+body { font-family: sans-serif; text-align: center; margin: 2em; }
+.error { color: red; }
+form { margin-top: 1em; }
+button { padding: 0.5em 1em; font-size: 1em; }
