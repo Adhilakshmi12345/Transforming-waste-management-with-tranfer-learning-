@@ -1,0 +1,24 @@
+/data/train/<class>/*.jpg
+/data/val/<class>/*.jpg
+import tensorflow as tf
+
+IMG_SIZE = (224, 224)
+BATCH_SIZE = 32
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    'data/train', validation_split=0.2, subset='training',
+    seed=123, image_size=IMG_SIZE, batch_size=BATCH_SIZE)
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    'data/train', validation_split=0.2, subset='validation',
+    seed=123, image_size=IMG_SIZE, batch_size=BATCH_SIZE)
+base = tf.keras.applications.ResNet50(include_top=False, weights='imagenet', input_shape=IMG_SIZE+(3,))
+base.trainable = False
+
+x = tf.keras.layers.GlobalAveragePooling2D()(base.output)
+x = tf.keras.layers.Dense(256, activation='relu')(x)
+output = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+model = tf.keras.Model(base.input, output)
+
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+model.fit(train_ds, validation_data=val_ds, epochs=10)
