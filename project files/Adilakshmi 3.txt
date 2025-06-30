@@ -1,0 +1,92 @@
+import tensorflow as tf
+
+IMG_SIZE = (224, 224)
+BATCH_SIZE = 32
+DATA_DIR = 'data/waste_images'
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    DATA_DIR,
+    validation_split=0.2,
+    subset='training',
+    seed=123,
+    image_size=IMG_SIZE,
+    batch_size=BATCH_SIZE)
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    DATA_DIR,
+    validation_split=0.2,
+    subset='validation',
+    seed=123,
+    image_size=IMG_SIZE,
+    batch_size=BATCH_SIZE)
+
+CLASS_NAMES = train_ds.class_names
+NUM_CLASSES = len(CLASS_NAMES)
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds = train_ds.prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.prefetch(buffer_size=AUTOTUNE)from tensorflow.keras import layers, models
+from tensorflow.keras.applications import MobileNetV2
+
+base_model = MobileNetV2(input_shape=IMG_SIZE + (3,),
+                         include_top=False,
+                         weights='imagenet')
+base_model.trainable = False
+
+inputs = layers.Input(shape=IMG_SIZE + (3,))
+x = base_model(inputs, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.2)(x)
+outputs = layers.Dense(NUM_CLASSES, activation='softmax')(x)
+
+model = models.Model(inputs, outputs)
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()EPOCHS = 10
+history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=EPOCHS
+)base_model.trainable = True
+
+# Freeze early layers, leave last ~20% trainable
+fine_tune_at = int(len(base_model.layers) * 0.8)
+for layer in base_model.layers[:fine_tune_at]:
+    layer.trainable = False
+
+model.compile(optimizer=tf.keras.optimizers.Adam(1e-5),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+fine_history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=EPOCHS + 5,
+    initial_epoch=history.epoch[-1]
+)
+import matplotlib.pyplot as plt
+
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+epochs = range(len(acc))
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+plt.plot(epochs, acc, label='Train Acc')
+plt.plot(epochs, val_acc, label='Val Acc')
+plt.legend()
+plt.title('Accuracy over Epochs')
+
+plt.subplot(1,2,2)
+plt.plot(epochs, loss, label='Train Loss')
+plt.plot(epochs, val_loss, label='Val Loss')
+plt.legend()
+plt.title('Loss over Epochs')
+plt.show()
+
+
+
