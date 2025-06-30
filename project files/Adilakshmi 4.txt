@@ -1,0 +1,80 @@
+import tensorflow as tf
+
+IMG_SIZE = (224, 224)
+BATCH = 32
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    'data/waste',
+    validation_split=0.2,
+    subset='training',
+    seed=42,
+    image_size=IMG_SIZE,
+    batch_size=BATCH)
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    'data/waste',
+    validation_split=0.2,
+    subset='validation',
+    seed=42,
+    image_size=IMG_SIZE,
+    batch_size=BATCH)
+
+CLASS_NAMES = train_ds.class_names
+NUM_CLASSES = len(CLASS_NAMES)
+
+# Optimize performance
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds = train_ds.prefetch(AUTOTUNE)
+val_ds = val_ds.prefetch(AUTOTUNE)
+from tensorflow.keras import layers, models
+from tensorflow.keras.applications import EfficientNetV2S
+
+base = EfficientNetV2S(include_top=False, weights='imagenet', input_shape=IMG_SIZE+(3,))
+base.trainable = False  # freeze backbone
+
+inputs = layers.Input(shape=IMG_SIZE+(3,))
+x = base(inputs, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.3)(x)
+outputs = layers.Dense(NUM_CLASSES, activation='softmax')(x)
+
+model = models.Model(inputs, outputs)
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
+EPOCHS = 12
+history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)base.trainable = True
+fine_at = int(len(base.layers) * 0.8)
+for layer in base.layers[:fine_at]:
+    layer.trainable = False
+
+from tensorflow.keras.optimizers import Adam
+model.compile(optimizer=Adam(1e-5),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+fine_history = model.fit(train_ds,
+                         validation_data=val_ds,
+                         epochs=EPOCHS + 5,
+                         initial_epoch=history.epoch[-1])import matplotlib.pyplot as plt
+
+def plot_hist(h):
+    for metric in ['accuracy', 'loss']:
+        plt.plot(h.history[metric], label=f'Train {metric}')
+        plt.plot(h.history['val_' + metric], label=f'Val {metric}')
+        plt.xlabel('Epoch')
+        plt.ylabel(metric.capitalize())
+        plt.legend()
+        plt.show()
+
+plot_hist(history)
+plot_hist(fine_history)
+import numpy as np
+from sklearn.metrics import classification_report, confusion_matrix
+
+y_true = np.concatenate([y for x, y in val_ds], axis=0)
+y_pred = np.argmax(model.predict(val_ds), axis=1)
+
+print(classification_report(y_true, y_pred, target_names=CLASS_NAMES))
+
